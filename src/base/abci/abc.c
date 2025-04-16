@@ -66,6 +66,7 @@
 #include "base/acb/acbPar.h"
 #include "misc/extra/extra.h"
 #include "opt/eslim/eSLIM.h"
+#include "bdd2prs/bdd2prs/bdd2prs.h"
 
 
 #ifndef _WIN32
@@ -108,6 +109,8 @@ static int Abc_CommandPrintDelay             ( Abc_Frame_t * pAbc, int argc, cha
 static int Abc_CommandShow                   ( Abc_Frame_t * pAbc, int argc, char ** argv );
 static int Abc_CommandShowBdd                ( Abc_Frame_t * pAbc, int argc, char ** argv );
 static int Abc_CommandShowCut                ( Abc_Frame_t * pAbc, int argc, char ** argv );
+
+static int Abc_CommandBdd2Prs                ( Abc_Frame_t * pAbc, int argc, char ** argv );
 
 static int Abc_CommandCollapse               ( Abc_Frame_t * pAbc, int argc, char ** argv );
 static int Abc_CommandSatClp                 ( Abc_Frame_t * pAbc, int argc, char ** argv );
@@ -922,6 +925,8 @@ void Abc_Init( Abc_Frame_t * pAbc )
     Cmd_CommandAdd( pAbc, "Printing",     "show",          Abc_CommandShow,             0 );
     Cmd_CommandAdd( pAbc, "Printing",     "show_bdd",      Abc_CommandShowBdd,          0 );
     Cmd_CommandAdd( pAbc, "Printing",     "show_cut",      Abc_CommandShowCut,          0 );
+
+    Cmd_CommandAdd( pAbc, "Printing",     "bdd2prs",       Abc_CommandBdd2Prs,          0 );
 
     Cmd_CommandAdd( pAbc, "Synthesis",    "clp",           Abc_CommandCollapse,         1 );
     Cmd_CommandAdd( pAbc, "Synthesis",    "collapse",      Abc_CommandCollapse,         1 );
@@ -3459,6 +3464,62 @@ usage:
     Abc_Print( -2, "\t-h    : print the command usage\n");
     return 1;
 }
+
+/**Function*************************************************************
+
+  Synopsis    []
+
+  Description []
+
+  SideEffects []
+
+  SeeAlso     []
+
+***********************************************************************/
+int Abc_CommandBdd2Prs( Abc_Frame_t * pAbc, int argc, char ** argv )
+{
+    int c;
+    extern void Bdd2Prs_Hello( void );
+
+    while ( ( c = Extra_UtilGetopt( argc, argv, "h" ) ) != EOF )
+    {
+        switch ( c )
+        {
+        // case 'c':
+        //     fCompl ^= 1;
+        //     break;
+        // case 'g':
+        //     fGlobal ^= 1;
+        //     break;
+        case 'h':
+            goto usage;
+        default:
+            goto usage;
+        }
+    }
+
+    // if ( pNtk == NULL )
+    // {
+    //     Abc_Print( -1, "Empty network.\n" );
+    //     return 1;
+    // }    
+    Bdd2Prs_Hello();
+
+    return 0;
+
+usage:
+    Abc_Print( -2, "usage: bdd2prs [-v] <node>\n" );
+    Abc_Print( -2, "       converts a bdd to a shared gate network output in production rules for use in ACT.\n" );
+//     Abc_Print( -2, "       in terms of primary inputs or the local BDD of a node in terms of its fanins\n" );
+// #ifdef WIN32
+//     Abc_Print( -2, "       \"dot.exe\" and \"gsview32.exe\" should be set in the paths\n" );
+//     Abc_Print( -2, "       (\"gsview32.exe\" may be in \"C:\\Program Files\\Ghostgum\\gsview\\\")\n" );
+// #endif
+//     Abc_Print( -2, "\t<node>: (optional) the node to consider [default = the driver of the first PO]\n");
+    Abc_Print( -2, "\t-h    : print the command usage\n");
+    return 1;
+}
+
 
 /**Function*************************************************************
 
