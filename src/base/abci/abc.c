@@ -3478,19 +3478,17 @@ usage:
 ***********************************************************************/
 int Abc_CommandBdd2Prs( Abc_Frame_t * pAbc, int argc, char ** argv )
 {
-    int c;
-    extern void Bdd2Prs_Hello( void );
+    Abc_Ntk_t * pNtk = Abc_FrameReadNtk(pAbc);
+    int c, fReorder = 1;
+    extern int Bdd2Prs( Abc_Ntk_t * pNtk, int fReorder );
 
-    while ( ( c = Extra_UtilGetopt( argc, argv, "h" ) ) != EOF )
+    while ( ( c = Extra_UtilGetopt( argc, argv, "rh" ) ) != EOF )
     {
         switch ( c )
         {
-        // case 'c':
-        //     fCompl ^= 1;
-        //     break;
-        // case 'g':
-        //     fGlobal ^= 1;
-        //     break;
+        case 'r':
+            fReorder ^= 1;
+            break;
         case 'h':
             goto usage;
         default:
@@ -3498,17 +3496,17 @@ int Abc_CommandBdd2Prs( Abc_Frame_t * pAbc, int argc, char ** argv )
         }
     }
 
-    // if ( pNtk == NULL )
-    // {
-    //     Abc_Print( -1, "Empty network.\n" );
-    //     return 1;
-    // }    
-    Bdd2Prs_Hello();
+    if ( pNtk == NULL )
+    {
+        Abc_Print( -1, "Empty network.\n" );
+        return 1;
+    }
+    Bdd2Prs(pNtk, fReorder);
 
     return 0;
 
 usage:
-    Abc_Print( -2, "usage: bdd2prs [-v] <node>\n" );
+    Abc_Print( -2, "usage: bdd2prs [-r] \n" );
     Abc_Print( -2, "       converts a bdd to a shared gate network output in production rules for use in ACT.\n" );
 //     Abc_Print( -2, "       in terms of primary inputs or the local BDD of a node in terms of its fanins\n" );
 // #ifdef WIN32
@@ -3516,6 +3514,7 @@ usage:
 //     Abc_Print( -2, "       (\"gsview32.exe\" may be in \"C:\\Program Files\\Ghostgum\\gsview\\\")\n" );
 // #endif
 //     Abc_Print( -2, "\t<node>: (optional) the node to consider [default = the driver of the first PO]\n");
+    Abc_Print( -2, "\t-r    : toggles dynamic variable reordering [default = %s]\n", fReorder? "yes": "no" );    
     Abc_Print( -2, "\t-h    : print the command usage\n");
     return 1;
 }

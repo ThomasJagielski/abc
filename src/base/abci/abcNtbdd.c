@@ -376,10 +376,6 @@ void * Abc_NtkBuildGlobalBdds( Abc_Ntk_t * pNtk, int nBddSizeMax, int fDropInter
     Abc_NtkForEachCo( pNtk, pObj, i )
     {
         bFunc = Abc_NodeGlobalBdds_rec( dd, Abc_ObjFanin0(pObj), nBddSizeMax, fDropInternal, pProgress, &Counter, fVerbose );
-        
-        // --- NOTE: ADDED THIS!
-        Cudd_PrintDebug( dd, bFunc, Abc_NtkCiNum(pNtk), 3 );  // verbose level 2
-        // --- 
 
         if ( bFunc == NULL )
         {
