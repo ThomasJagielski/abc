@@ -33,8 +33,14 @@ char* get_or_assign_name(st_table *nodeMap, DdNode *n, int *nodeCounter) {
 void TraverseWithCudd(DdManager *dd, DdNode *f, Abc_Ntk_t *pNtk) {
     DdGen *gen;
     DdNode *node;
+    DdNode *lastNode;
+    char prsLine[250];
+    prsLine[0] = '\0'; // Initialize to empty string
+    int condition = 0;
+    
 
     int nodeCounter = 1;
+    int i=0;
     st_table *nodeMap = st_init_table(st_ptrcmp, st_ptrhash);
 
     // Ensure the function is in regular form (remove complement edge if any)
@@ -46,7 +52,37 @@ void TraverseWithCudd(DdManager *dd, DdNode *f, Abc_Ntk_t *pNtk) {
         return;
     }
 
-    printf("Traversing BDD nodes:\n");
+    printf("Traversing BDD nodes:\n");       
+
+    DdNode *zero = Cudd_ReadLogicZero(dd);
+    printf("Constant ZERO node pointer: %p\n", zero);
+
+    DdNode *one = DD_ONE(dd);
+    printf("ONE_POINTER: %p\n", one);
+
+    // printf("Complemented 1: %d\n", Cudd_IsComplement(one));
+
+    // Cudd_PrintDebug(dd, one, 0, 3); // depth 0, verbosity 2
+
+    // Cudd_PrintDebug(dd, zero, 0, 3); // depth 0, verbosity 2
+
+    if (Cudd_Regular(zero) == Cudd_ReadOne(dd) && Cudd_IsComplement(zero)) {
+        printf("This is actually LOGICAL ZERO\n");
+    }
+
+
+    DdNode *reg = Cudd_Regular(zero);
+    if (reg == one) {
+        if (Cudd_IsComplement(zero)) {
+            printf("Node represents logic 0\n");
+        } else {
+            printf("Node represents logic 1\n");
+        }
+    }
+
+
+
+    // DdNodePtr nodelist = dd->constants.nodelist;
 
     do {
         char *nodeName = get_or_assign_name(nodeMap, node, &nodeCounter);
@@ -59,12 +95,27 @@ void TraverseWithCudd(DdManager *dd, DdNode *f, Abc_Ntk_t *pNtk) {
             continue;
         }
 
+        // if (Cudd_IsConstant(Cudd_Regular(node))) {
+        //     DdNode *one = Cudd_ReadOne(dd);
+        //     const char *value;
+        
+        //     if (node == one) {
+        //         value = "1";
+        //     } else if (node == Cudd_Not(one)) {
+        //         value = "0";
+        //     } else {
+        //         value = "UNKNOWN_CONST";
+        //     }
+        
+        //     printf("CONST node [%s] %p: %s\n", nodeName, node, value);
+        //     continue;
+        // }
+
         int index = Cudd_NodeReadIndex(node);
 
-        // Get the primary input object from ABC
+        // Primary input
         Abc_Obj_t *pObj = Abc_NtkPi(pNtk, index);
         const char *varName = pObj ? Abc_ObjName(pObj) : "UNKNOWN";
-
 
         DdNode *T = Cudd_T(node);
         DdNode *E = Cudd_E(node);
@@ -73,21 +124,101 @@ void TraverseWithCudd(DdManager *dd, DdNode *f, Abc_Ntk_t *pNtk) {
         char *eName = get_or_assign_name(nodeMap, Cudd_Regular(E), &nodeCounter);
 
         // Print debug info
-        printf("%s -> Node [%s] %p: index = %d, T = [%s] %p, E = [%s] %p%s\n",
+        printf("%s -> Node [%s] %p: index = %d, T = [%s] %p%s, E = [%s] %p%s\n",
             varName,
             nodeName,
             node,
             Cudd_NodeReadIndex(node),
             tName,
             T,
+            Cudd_IsComplement(T) ? " (T is complemented)" : "",
             eName,
             E,
             Cudd_IsComplement(E) ? " (E is complemented)" : "");
 
-        // printf("M%d %s %s GND GND NMOS L=0.18u W=1u ; index %d\n",
-        //     nodeCounter-1, nodeName, tName, Cudd_NodeReadIndex(node));
+        // if (i >= 1) {
+        //     DdNode *lastT = Cudd_T(lastNode);
+        //     DdNode *lastE = Cudd_E(lastNode);
+        //     printf("Last Node: %p: index = %d, T = %p, E = %p%s\n",
+        //         lastNode,
+        //         Cudd_NodeReadIndex(lastNode),
+        //         lastT,
+        //         lastE,
+        //         Cudd_IsComplement(lastE) ? " (E is complemented)" : "");
+        // }
+
+        if ( i >= 1 ) {
+            // TODO: Check if a node is a complement
+            char *lastNodeName = get_or_assign_name(nodeMap, lastNode, &nodeCounter-1);
+            DdNode *lastT = Cudd_T(lastNode);
+            DdNode *lastE = Cudd_E(lastNode);
+            int lastIndex = Cudd_NodeReadIndex(lastNode);
+
+            Abc_Obj_t *pObj = Abc_NtkPi(pNtk, lastIndex);
+            const char *lastVarName = pObj ? Abc_ObjName(pObj) : "UNKNOWN";
+
+            // New Condition
+            if ( lastT == Cudd_ReadOne(dd) ) {
+                // strcpy(prsLine, "");
+                strncat(prsLine, "(", sizeof(prsLine) - strlen(prsLine) - 1);
+                strncat(prsLine, lastVarName, sizeof(prsLine) - strlen(prsLine) - 1);
+            }
+
+            // last node of leaf
+            if ( T == Cudd_ReadOne(dd) ) {
+                if (i > 1) {
+                    strncat(prsLine, ") -> ", sizeof(prsLine) - strlen(prsLine) - 1);
+                    if (condition == 1) {
+                        strncat(prsLine, lastNodeName, sizeof(prsLine) - strlen(prsLine) - 1);
+                    } else if (condition == 2) {
+                        strncat(prsLine, nodeName, sizeof(prsLine) - strlen(prsLine) - 1);
+                    }
+                    strncat(prsLine, ";\n", sizeof(prsLine) - strlen(prsLine) - 1);
+                    // printf("%s", prsLine);
+                    condition = 0;
+                }
+            }
+
+            // AND condition
+            if ( (T == lastNode) && (E == lastE) ) {
+                strncat(prsLine, " ^ ", sizeof(prsLine) - strlen(prsLine) - 1);
+                strncat(prsLine, varName, sizeof(prsLine) - strlen(prsLine) - 1);
+                condition = 1;
+            }
+
+            // OR condition
+            if ( (T == lastT) && (lastNode == E) ) {
+                strncat(prsLine, " | ", sizeof(prsLine) - strlen(prsLine) - 1);
+                strncat(prsLine, varName, sizeof(prsLine) - strlen(prsLine) - 1);
+                condition = 2;
+            }
+
+            // XOR condition
+            // if ( (T == lastT) && ((lastNode == E) || (lastE == node)) ) {
+            //     strncat(prsLine, " | ", sizeof(prsLine) - strlen(prsLine) - 1);
+            //     strncat(prsLine, varName, sizeof(prsLine) - strlen(prsLine) - 1);
+            //     condition = 3;
+            // }
+
+        }
         
+        lastNode = node;
+        i = i + 1;
     } while (Cudd_NextNode(gen, &node));
+
+    strncat(prsLine, ") -> ", sizeof(prsLine) - strlen(prsLine) - 1);
+    char *nodeName = get_or_assign_name(nodeMap, node, &nodeCounter);
+    if (condition == 2) {
+        DdNode *E = Cudd_E(node);
+        char *eName = get_or_assign_name(nodeMap, Cudd_Regular(E), &nodeCounter);
+        strncat(prsLine, eName, sizeof(prsLine) - strlen(prsLine) - 1);
+    } else {
+        strncat(prsLine, nodeName, sizeof(prsLine) - strlen(prsLine) - 1);
+    }
+    strncat(prsLine, ";\n", sizeof(prsLine) - strlen(prsLine) - 1);
+
+    // Print out the last node condition if there isn't a new condition
+    printf("%s", prsLine);
 
     // Clean up the generator
     Cudd_GenFree(gen);
