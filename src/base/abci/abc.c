@@ -66,7 +66,7 @@
 #include "base/acb/acbPar.h"
 #include "misc/extra/extra.h"
 #include "opt/eslim/eSLIM.h"
-#include "bdd2prs/bdd2prs/bdd2prs.h"
+#include "prs/bdd2prs/bdd2prs.h"
 
 
 #ifndef _WIN32

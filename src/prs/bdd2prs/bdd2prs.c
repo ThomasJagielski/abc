@@ -159,7 +159,7 @@ void TraverseWithCudd(DdManager *dd, DdNode *f, Abc_Ntk_t *pNtk, int iPo) {
     int i=0;
     st_table *nodeMap = st_init_table(st_ptrcmp, st_ptrhash);
 
-    Abc_Obj_t *pPo = Abc_NtkCo(pNtk, i);
+    Abc_Obj_t *pPo = Abc_NtkCo(pNtk, iPo);
     const char *outputName = Abc_ObjName(pPo);
     DdNode *outputPointer = f;
 
