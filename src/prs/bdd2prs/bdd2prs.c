@@ -85,6 +85,7 @@ void TraverseWithCudd(DdManager *dd, DdNode *f, Abc_Ntk_t *pNtk, int iPo) {
     int nodeCounter = 1;
     int i=0;
     int or_flag=0;
+    int start_flag=0;
     st_table *nodeMap = st_init_table(st_ptrcmp, st_ptrhash);
 
     Abc_Obj_t *pPo = Abc_NtkCo(pNtk, iPo);
@@ -150,19 +151,26 @@ void TraverseWithCudd(DdManager *dd, DdNode *f, Abc_Ntk_t *pNtk, int iPo) {
         if ( T != one ) {
             // TODO: Include checking for if there is a complemented version or not
             // TODO: Treat everything as the start of an OR tree and then base decisions on that
+
+            char *lastNodeName = get_or_assign_name(nodeMap, lastNode, &nodeCounter);
+        
+
             if ( i >= 1 ) {
                 if ( is_OR(lastNode, node) ) {
-                    if (0 == or_flag) {
-                        offset += snprintf(prsLine + offset, sizeof(prsLine) - offset, "(%s & %s)", tName, varName);
-                    } else {
-                        offset += snprintf(prsLine + offset, sizeof(prsLine) - offset, " | (%s & %s)", tName, varName);
-                    }
+                    offset += snprintf(prsLine + offset, sizeof(prsLine) - offset, " | (%s & %s)", tName, varName);
                     or_flag = 1;
+                    start_flag = 0;
                 } else if (1 == or_flag ) {
                     offset += snprintf(prsLine + offset, sizeof(prsLine) - offset, " -> %s", nodeName);
                     or_flag = 0;
+                    start_flag = 0;
                 } else {
-                    offset += snprintf(prsLine + offset, sizeof(prsLine) - offset, "(%s & %s) -> %s\n", tName, varName, nodeName);
+                    // offset += snprintf(prsLine + offset, sizeof(prsLine) - offset, "(%s & %s) -> %s\n", tName, varName, nodeName);
+                    if (start_flag == 1) {
+                        offset += snprintf(prsLine + offset, sizeof(prsLine) - offset, " -> %s\n", lastNodeName);    
+                    }
+                    offset += snprintf(prsLine + offset, sizeof(prsLine) - offset, "(%s & %s)", tName, varName);
+                    start_flag = 1;
                     or_flag = 0;
                 }
             }
@@ -176,11 +184,15 @@ void TraverseWithCudd(DdManager *dd, DdNode *f, Abc_Ntk_t *pNtk, int iPo) {
 
     // Print out the last node condition if there isn't a new condition
     char *nodeName = get_or_assign_name(nodeMap, node, &nodeCounter);
+    char *lastNodeName = get_or_assign_name(nodeMap, lastNode, &nodeCounter);
     if (1 == or_flag) {
         offset += snprintf(prsLine + offset, sizeof(prsLine) - offset, " -> %s", nodeName);
         or_flag = 0;
+    } else if (1 == start_flag) {
+        offset += snprintf(prsLine + offset, sizeof(prsLine) - offset, " -> %s\n", lastNodeName); 
+        start_flag = 0;
     }
-    printf("%s\n", prsLine);
+    printf("%s\n\n", prsLine);
 
     // Clean up the generator
     Cudd_GenFree(gen);
