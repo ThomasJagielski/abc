@@ -23,7 +23,7 @@ char* get_or_assign_name(st_table *nodeMap, DdNode *n, int *nodeCounter) {
         if (Cudd_IsConstant(n)) {
             sprintf(name, "t%d", (*nodeCounter)++);  // constants prefixed with 't'
         } else {
-            sprintf(name, "n%d", (*nodeCounter)++);  // regular nodes prefixed with 'n'
+            sprintf(name, "@n%d", (*nodeCounter)++);  // regular nodes prefixed with 'n'
         }
 
         st_insert(nodeMap, (char *)n, name);
@@ -75,88 +75,16 @@ bool is_OR(DdNode *lastNode, DdNode *node) {
     }
 }
 
-void initCondList(CondList *list, int initialCapacity) {
-    list->items = (BddCondition_t *)malloc(sizeof(BddCondition_t) * initialCapacity);
-    list->size = 0;
-    list->capacity = initialCapacity;
-}
-
-void addCond(CondList *list, BddCondition_t cond) {
-    if (list->size >= list->capacity) {
-        list->capacity *= 2;
-        list->items = (BddCondition_t *)realloc(list->items, sizeof(BddCondition_t) * list->capacity);
-    }
-    list->items[list->size++] = cond;
-}
-
-void collapseConditions(DdManager *dd, CondList *list) {
-    CondList collapsed;
-    initCondList(&collapsed, list->size);
-    int i = 0;
-    BddCondition_t combined;
-    while (i < list->size - 1) {
-        BddCondition_t *lastCond = &list->items[i];
-        BddCondition_t *currCond = &list->items[i + 1];
-
-        int newLen = strlen(lastCond->label) + strlen(currCond->label) + 8;
-        char *newLabel = (char *)malloc(newLen);
-        newLabel[0] = '\0';
-
-        // AND Condition
-        if ( (currCond->T == lastCond->node) && (currCond->E == lastCond->E) ) {
-            // strncat(newLabel, lastCond->label, sizeof(newLabel) - strlen(newLabel) - 1);
-            // strncat(newLabel, " & ", sizeof(newLabel) - strlen(newLabel) - 1);
-            // strncat(newLabel, currCond->label, sizeof(newLabel) - strlen(newLabel) - 1);
-            snprintf(newLabel, newLen, "(%s & %s)", lastCond->label, currCond->label);
-            // printf("AND!!!!\n");
-            combined.label = newLabel;
-            combined.node = currCond->node;
-            combined.T = lastCond->T;
-            combined.E = currCond->E;
-            i += 2;
-        } else 
-        // OR Condition
-        if (( (currCond->T == lastCond->T) && (lastCond->node == currCond->E) )) { 
-            // strncat(newLabel, lastCond->label, sizeof(newLabel) - strlen(newLabel) - 1);
-            // strncat(newLabel, " | ", sizeof(newLabel) - strlen(newLabel) - 1);
-            // strncat(newLabel, currCond->label, sizeof(newLabel) - strlen(newLabel) - 1);
-            // printf("OR!!!!\n");
-            snprintf(newLabel, newLen, "(%s | %s)", lastCond->label, currCond->label);
-            combined.label = newLabel;
-            combined.node = currCond->node;
-            combined.T = currCond->T;
-            combined.E = lastCond->E;
-            i += 2;
-        } else {
-            // addCond(&collapsed, *lastCond);
-            i += 1;
-        }
-        addCond(&collapsed, combined);
-    }
-    printf("\n>>> Connected-to-base BDD Conditions List:\n");
-    for (int j = 0; j < collapsed.size; ++j) {
-        BddCondition_t *c = &collapsed.items[j];
-        printf("[%d] label: %s, node=%p, T=%p, E=%p\n", j, c->label, c->node, c->T, c->E);
-    }
-
-    // return collapsed;
-}
-
-
 void TraverseWithCudd(DdManager *dd, DdNode *f, Abc_Ntk_t *pNtk, int iPo) {
     DdGen *gen;
     DdNode *node;
     DdNode *lastNode;
-    char prsLine[250];
-    prsLine[0] = '\0'; // Initialize to empty string
-    BddCondition_t cond_node;
-    // int condition = 0;
-
-    CondList connectedConditions;
-    initCondList(&connectedConditions, 10); 
+    char prsLine[1024] = "";  // Make sure this is large enough
+    int offset = 0;
 
     int nodeCounter = 1;
     int i=0;
+    int or_flag=0;
     st_table *nodeMap = st_init_table(st_ptrcmp, st_ptrhash);
 
     Abc_Obj_t *pPo = Abc_NtkCo(pNtk, iPo);
@@ -219,56 +147,27 @@ void TraverseWithCudd(DdManager *dd, DdNode *f, Abc_Ntk_t *pNtk, int iPo) {
             E,
             Cudd_IsComplement(E) ? " (E is complemented)" : "");
 
-        if ( 0 == i ) {
-            strcpy(prsLine, "");
-            strncat(prsLine, "(", sizeof(prsLine) - strlen(prsLine) - 1);
-            strncat(prsLine, varName, sizeof(prsLine) - strlen(prsLine) - 1);
-            cond_node.label = strdup(prsLine);
-            cond_node.node = node;
-            cond_node.T = Cudd_T(node);
-            cond_node.E = Cudd_E(node);
-        }
-
-        if ( i >= 1 ) {
-            // TODO: Check if a node is a complement
-
-            // int lastCounter = nodeCounter - 1;
-            
-            // char *lastNodeName = get_or_assign_name(nodeMap, lastNode, &lastCounter);
-            // DdNode *lastT = Cudd_T(lastNode);
-            // DdNode *lastE = Cudd_E(lastNode);
-            // int lastIndex = Cudd_NodeReadIndex(lastNode);
-
-            // Abc_Obj_t *pObj = Abc_NtkPi(pNtk, lastIndex);
-            // const char *lastVarName = pObj ? Abc_ObjName(pObj) : "UNKNOWN";
-
-            if ( is_AND(lastNode, node) ) {
-                strncat(prsLine, " & ", sizeof(prsLine) - strlen(prsLine) - 1);
-                strncat(prsLine, varName, sizeof(prsLine) - strlen(prsLine) - 1);
-                cond_node.label = prsLine;
-                cond_node.node = node;
-            } else if ( is_OR(lastNode, node) ) {
-                strncat(prsLine, " | ", sizeof(prsLine) - strlen(prsLine) - 1);
-                strncat(prsLine, varName, sizeof(prsLine) - strlen(prsLine) - 1);
-                cond_node.label = prsLine;
-                cond_node.node = node;
-                // cond_node.E = E;
-            } else if ( is_connected_to_base(dd, node) ) {
-                strncat(prsLine, ")", sizeof(prsLine) - strlen(prsLine) - 1);
-                // strncat(prsLine, lastNodeName, sizeof(prsLine) - strlen(prsLine) - 1);
-                cond_node.label = strdup(prsLine);
-                printf("%s\n", prsLine);
-                printf("%s, %p, %p, %p\n",cond_node.label, cond_node.node, cond_node.T, cond_node.E);
-                addCond(&connectedConditions, cond_node);
-
-                strcpy(prsLine, "");
-                strncat(prsLine, "(", sizeof(prsLine) - strlen(prsLine) - 1);
-                strncat(prsLine, varName, sizeof(prsLine) - strlen(prsLine) - 1);
-                cond_node.label = strdup(prsLine);
-                cond_node.node = node;
-                cond_node.T = Cudd_T(node);
-                cond_node.E = Cudd_E(node);
+        if ( T != one ) {
+            // TODO: Include checking for if there is a complemented version or not
+            // TODO: Treat everything as the start of an OR tree and then base decisions on that
+            if ( i >= 1 ) {
+                if ( is_OR(lastNode, node) ) {
+                    if (0 == or_flag) {
+                        offset += snprintf(prsLine + offset, sizeof(prsLine) - offset, "(%s & %s)", tName, varName);
+                    } else {
+                        offset += snprintf(prsLine + offset, sizeof(prsLine) - offset, " | (%s & %s)", tName, varName);
+                    }
+                    or_flag = 1;
+                } else if (1 == or_flag ) {
+                    offset += snprintf(prsLine + offset, sizeof(prsLine) - offset, " -> %s", nodeName);
+                    or_flag = 0;
+                } else {
+                    offset += snprintf(prsLine + offset, sizeof(prsLine) - offset, "(%s & %s) -> %s\n", tName, varName, nodeName);
+                    or_flag = 0;
+                }
             }
+        } else {
+            offset += snprintf(prsLine + offset, sizeof(prsLine) - offset, "%s -> %s\n", varName, nodeName);
         }
         
         lastNode = node;
@@ -276,25 +175,14 @@ void TraverseWithCudd(DdManager *dd, DdNode *f, Abc_Ntk_t *pNtk, int iPo) {
     } while (Cudd_NextNode(gen, &node));
 
     // Print out the last node condition if there isn't a new condition
-    strncat(prsLine, ")", sizeof(prsLine) - strlen(prsLine) - 1);
-    cond_node.label = strdup(prsLine);
-    printf("%s\n", prsLine);
-    printf("%s, %p, %p, %p\n",cond_node.label, cond_node.node, cond_node.T, cond_node.E);
-    addCond(&connectedConditions, cond_node);
-
-    printf("\n>>> Connected-to-base BDD Conditions List:\n");
-    for (int j = 0; j < connectedConditions.size; ++j) {
-        BddCondition_t *c = &connectedConditions.items[j];
-        printf("[%d] label: %s, node=%p, T=%p, E=%p\n", j, c->label, c->node, c->T, c->E);
+    char *nodeName = get_or_assign_name(nodeMap, node, &nodeCounter);
+    if (1 == or_flag) {
+        offset += snprintf(prsLine + offset, sizeof(prsLine) - offset, " -> %s", nodeName);
+        or_flag = 0;
     }
-
-    int listLength = connectedConditions.size;
-    printf("Length of condition list: %d\n", listLength);
-
-    collapseConditions(dd, &connectedConditions);
+    printf("%s\n", prsLine);
 
     // Clean up the generator
-    free(connectedConditions.items);
     Cudd_GenFree(gen);
     st_free_table(nodeMap);
 }
