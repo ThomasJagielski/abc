@@ -12,6 +12,8 @@
 #define st_free_table st__free_table
 #define st_ptrcmp st__ptrcmp
 #define st_ptrhash st__ptrhash
+#define st_strcmp st__strcmp
+#define st_strhash st__strhash
 #define st_insert st__insert
 #define st_lookup st__lookup 
 
@@ -30,6 +32,21 @@ char* get_or_assign_name(st_table *nodeMap, DdNode *n, int *nodeCounter) {
     }
     return name;
 }
+
+char* get_or_assign_name_mapping(st_table *nameMap, const char *key, const char *value) {
+    char *existingValue = NULL;
+    if (st_lookup(nameMap, (char *)key, &existingValue)) {
+        // Key exists, return the existing value
+        return existingValue;
+    } else {
+        // Insert new key/value
+        char *keyCopy = strdup(key);
+        char *valueCopy = strdup(value);
+        st_insert(nameMap, keyCopy, valueCopy);
+        return valueCopy;
+    }
+}
+
 
 bool is_connected_to_base(DdManager *dd, DdNode *node) {
     DdNode *zero = Cudd_ReadLogicZero(dd);
@@ -87,6 +104,7 @@ void TraverseWithCudd(DdManager *dd, DdNode *f, Abc_Ntk_t *pNtk, int iPo) {
     int or_flag=0;
     int start_flag=0;
     st_table *nodeMap = st_init_table(st_ptrcmp, st_ptrhash);
+    st_table *nameMap = st_init_table(strcmp, st_strhash);
 
     Abc_Obj_t *pPo = Abc_NtkCo(pNtk, iPo);
     const char *outputName = Abc_ObjName(pPo);
@@ -156,26 +174,36 @@ void TraverseWithCudd(DdManager *dd, DdNode *f, Abc_Ntk_t *pNtk, int iPo) {
         
 
             if ( i >= 1 ) {
-                if ( is_OR(lastNode, node) ) {
-                    offset += snprintf(prsLine + offset, sizeof(prsLine) - offset, " | (%s & %s)", tName, varName);
-                    or_flag = 1;
-                    start_flag = 0;
-                } else if (1 == or_flag ) {
-                    offset += snprintf(prsLine + offset, sizeof(prsLine) - offset, " -> %s", nodeName);
-                    or_flag = 0;
-                    start_flag = 0;
-                } else {
-                    // offset += snprintf(prsLine + offset, sizeof(prsLine) - offset, "(%s & %s) -> %s\n", tName, varName, nodeName);
-                    if (start_flag == 1) {
-                        offset += snprintf(prsLine + offset, sizeof(prsLine) - offset, " -> %s\n", lastNodeName);    
-                    }
-                    offset += snprintf(prsLine + offset, sizeof(prsLine) - offset, "(%s & %s)", tName, varName);
-                    start_flag = 1;
+                if ( (i >= 1) && is_OR(lastNode, node) ) {
+                    printf("%s maps to %s!!\n", eName, nodeName);
+                    get_or_assign_name_mapping(nameMap, eName, nodeName);
+                }
+                // if ( is_OR(lastNode, node) ) {
+                //     offset += snprintf(prsLine + offset, sizeof(prsLine) - offset, " | (%s & %s)", tName, varName);
+                //     printf("%s maps to %s!!\n", eName, nodeName);
+                //     or_flag = 1;
+                //     start_flag = 0;
+                // } else if (1 == or_flag ) {
+                //     offset += snprintf(prsLine + offset, sizeof(prsLine) - offset, " -> %s", nodeName);
+                //     or_flag = 0;
+                //     start_flag = 0;
+                // } else {
+                    offset += snprintf(prsLine + offset, sizeof(prsLine) - offset, "(%s & %s) -> %s\n", tName, varName, nodeName);
+                    // if (start_flag == 1) {
+                    //     offset += snprintf(prsLine + offset, sizeof(prsLine) - offset, " -> %s\n", lastNodeName);    
+                    // } else {
+                    //     offset += snprintf(prsLine + offset, sizeof(prsLine) - offset, "(%s & %s)", tName, varName);
+                    //     start_flag = 1;
+                    // }
                     or_flag = 0;
                 }
-            }
+            // }
         } else {
             offset += snprintf(prsLine + offset, sizeof(prsLine) - offset, "%s -> %s\n", varName, nodeName);
+            if ( (i >= 1) && is_OR(lastNode, node) ) {
+                printf("%s maps to %s!!\n", eName, nodeName);
+                get_or_assign_name_mapping(nameMap, eName, nodeName);
+            }
         }
         
         lastNode = node;
@@ -192,10 +220,89 @@ void TraverseWithCudd(DdManager *dd, DdNode *f, Abc_Ntk_t *pNtk, int iPo) {
         offset += snprintf(prsLine + offset, sizeof(prsLine) - offset, " -> %s\n", lastNodeName); 
         start_flag = 0;
     }
-    printf("%s\n\n", prsLine);
+    
+    // printf("\n=== Name Mappings ===\n");
+    // st__generator *gen2;
+    // char *key, *value;
+    // for (gen2 = st__init_gen(nameMap); st__gen(gen2, (char **)&key, (char **)&value); ) {
+    //     printf("%s -> %s\n", key, value);
+    // }
+    // st__free_gen(gen2);
+    // printf("=====================\n");
+    
+    
+    // printf("\n\n%s\n\n", prsLine);
+
+    //////
+
+  // 3. Replace all names inside prsLine
+char finalLine[4096] = "";
+char *cursor = prsLine;
+char *dest = finalLine;
+
+while (*cursor) {
+    int replaced = 0;
+
+    st__generator *gen3;
+    char *key, *value;
+
+    // Try to match at cursor
+    for (gen3 = st__init_gen(nameMap); st__gen(gen3, (char **)&key, (char **)&value); ) {
+        int keyLen = strlen(key);
+
+        if (strncmp(cursor, key, keyLen) == 0) {
+            // Match found
+
+            char tempValue[1024];
+            strcpy(tempValue, value);
+
+            int fullyResolved = 0;
+
+            // Keep resolving the mapping if it maps to something else
+            while (!fullyResolved) {
+                fullyResolved = 1;
+                st__generator *innerGen;
+                char *innerKey, *innerValue;
+                for (innerGen = st__init_gen(nameMap); st__gen(innerGen, (char **)&innerKey, (char **)&innerValue); ) {
+                    if (strcmp(tempValue, innerKey) == 0) {
+                        strcpy(tempValue, innerValue);
+                        fullyResolved = 0; // found a new mapping, continue
+                        break;
+                    }
+                }
+                st__free_gen(innerGen);
+            }
+
+            int tempLen = strlen(tempValue);
+            memcpy(dest, tempValue, tempLen);
+            dest += tempLen;
+            cursor += keyLen;
+            replaced = 1;
+            break;
+        }
+    }
+    st__free_gen(gen3);
+
+    if (!replaced) {
+        *dest++ = *cursor++;
+    }
+}
+*dest = '\0';
+
+
+// Final output
+printf("\n=== Final Replaced String ===\n");
+printf("%s\n", finalLine);
+printf("=============================\n");
+
+    //////
+
+
+
 
     // Clean up the generator
     Cudd_GenFree(gen);
+    st_free_table(nameMap);
     st_free_table(nodeMap);
 }
 
