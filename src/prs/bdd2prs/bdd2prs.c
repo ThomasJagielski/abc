@@ -1,104 +1,107 @@
 // src/prs/bdd2prs.c
 
 #include <stdio.h>
+#include <stdint.h>
 #include <stdbool.h>
 #include "base/abc/abc.h"
 #include "bdd/cudd/cudd.h"
 #include "bdd/cudd/cuddInt.h"
 #include "bdd2prs.h"
+// #include "vec.h"
 
-#define st_table st__table
-#define st_init_table st__init_table
-#define st_free_table st__free_table
-#define st_ptrcmp st__ptrcmp
-#define st_ptrhash st__ptrhash
-#define st_strcmp st__strcmp
-#define st_strhash st__strhash
-#define st_insert st__insert
-#define st_lookup st__lookup 
+// void PrintPointerChainsFromLeaf(st__table *inputMap, DdNode *current, Vec_Ptr_t *path) {
+//     Vec_PtrPush(path, current);
 
-char* get_or_assign_name(st_table *nodeMap, DdNode *n, int *nodeCounter) {
-    char *name;
-    if (!st_lookup(nodeMap, (char *)n, (char **)&name)) {
-        name = (char *)malloc(20);
+//     Vec_Ptr_t *inputs = NULL;
+//     if (!st__lookup(inputMap, (char *)current, (char **)&inputs) || Vec_PtrSize(inputs) == 0) {
+//         // Reached a root node, print chain
+//         for (int i = Vec_PtrSize(path) - 1; i >= 0; i--) {
+//             printf("%p", (void *)Vec_PtrEntry(path, i));
+//             if (i > 0)
+//                 printf(" -> ");
+//         }
+//         printf("\n");
+//     } else {
+//         for (int i = 0; i < Vec_PtrSize(inputs); i++) {
+//             DdNode *input = (DdNode *)Vec_PtrEntry(inputs, i);
+//             PrintPointerChainsFromLeaf(inputMap, input, path);
+//         }
+//     }
 
-        if (Cudd_IsConstant(n)) {
-            sprintf(name, "t%d", (*nodeCounter)++);  // constants prefixed with 't'
-        } else {
-            sprintf(name, "@n%d", (*nodeCounter)++);  // regular nodes prefixed with 'n'
+//     Vec_PtrPop(path);
+// }
+
+// void PrintPointerChainsFromLeaf(st__table *inputMap, DdNode *current, Vec_Ptr_t *path) {
+//     Vec_PtrPush(path, current);
+
+//     Vec_Ptr_t *inputs = NULL;
+//     if (!st__lookup(inputMap, (char *)current, (char **)&inputs) || Vec_PtrSize(inputs) == 0) {
+//         // Reached a root node — print the full path
+//         for (int i = Vec_PtrSize(path) - 1; i >= 0; i--) {
+//             printf("%p", Vec_PtrEntry(path, i));
+//             if (i > 0) printf(" -> ");
+//         }
+//         printf("\n");
+//     } else {
+//         for (int i = 0; i < Vec_PtrSize(inputs); i++) {
+//             InputEdge_t *edge = (InputEdge_t *)Vec_PtrEntry(inputs, i);
+//             if (edge->input == Cudd_Not(0)) continue; // Skip ELSE to 0
+//             PrintPointerChainsFromLeaf(inputMap, edge->input, path);
+//         }
+//     }
+
+//     Vec_PtrPop(path);
+// }
+
+void PrintPointerChainsFromLeaf(st__table *inputMap, DdNode *current, Vec_Ptr_t *path, bool isTBranch) {
+    // Create an edge struct to record how we got to this node
+    InputEdge_t *edge = ABC_ALLOC(InputEdge_t, 1);
+    edge->input = current;
+    edge->isTBranch = isTBranch;
+    Vec_PtrPush(path, edge);
+
+    Vec_Ptr_t *inputs = NULL;
+    if (!st__lookup(inputMap, (char *)current, (char **)&inputs) || Vec_PtrSize(inputs) == 0) {
+        // Reached a root node — print the full path
+        for (int i = Vec_PtrSize(path) - 1; i >= 0; i--) {
+            InputEdge_t *e = (InputEdge_t *)Vec_PtrEntry(path, i);
+            printf("%p [%c]", (void *)e->input, e->isTBranch ? 'T' : 'E');
+            if (i > 0) printf(" -> ");
         }
-
-        st_insert(nodeMap, (char *)n, name);
-    }
-    return name;
-}
-
-bool is_connected_to_base(DdManager *dd, DdNode *node) {
-    DdNode *zero = Cudd_ReadLogicZero(dd);
-    DdNode *one = DD_ONE(dd);
-
-    DdNode *T = Cudd_T(node);
-    DdNode *E = Cudd_E(node);
-
-    if ( (T == zero) || (E == one) ) {
-        return 1;
-    } else if ( (T == one) || (E == zero) ) {
-        return 1;
+        printf("\n");
     } else {
-        return 0;
+        for (int i = 0; i < Vec_PtrSize(inputs); i++) {
+            InputEdge_t *nextEdge = (InputEdge_t *)Vec_PtrEntry(inputs, i);
+            if (nextEdge->input == Cudd_Not(0)) continue; // Skip ELSE to 0
+            PrintPointerChainsFromLeaf(inputMap, nextEdge->input, path, nextEdge->isTBranch);
+        }
     }
+
+    Vec_PtrPop(path);
+    ABC_FREE(edge);
 }
 
-bool is_AND(DdNode *lastNode, DdNode *node) {
-    DdNode *T = Cudd_T(node);
-    DdNode *E = Cudd_E(node);
 
-    // DdNode *lastT = Cudd_T(lastNode);
-    DdNode *lastE = Cudd_E(lastNode);
 
-    if ( (T == lastNode) && (E == lastE) ) {
-        return 1;
-    } else {
-        return 0;
-    }
-}
 
-bool is_OR(DdNode *lastNode, DdNode *node) {
-    DdNode *T = Cudd_T(node);
-    DdNode *E = Cudd_E(node);
 
-    DdNode *lastT = Cudd_T(lastNode);
-    // DdNode *lastE = Cudd_E(lastNode);
 
-    if ( (T == lastT) && (lastNode == E) ) {
-        return 1;
-    } else {
-        return 0;
-    }
-}
-
-void TraverseWithCudd(DdManager *dd, DdNode *f, Abc_Ntk_t *pNtk, int iPo, FILE *fout) {
+void TraverseWithCudd(DdManager *dd, DdNode *f, Abc_Ntk_t *pNtk, int iPo) {
     DdGen *gen;
     DdNode *node;
-    DdNode *lastNode;
-    char prsLine[1024] = "";  // Make sure this is large enough
-    int offset = 0;
-
-    int nodeCounter = 1;
-    int i=0;
-    int or_flag=0;
-    int start_flag=0;
-    st_table *nodeMap = st_init_table(st_ptrcmp, st_ptrhash);
 
     Abc_Obj_t *pPo = Abc_NtkCo(pNtk, iPo);
     const char *outputName = Abc_ObjName(pPo);
     DdNode *outputPointer = f;
 
-    // Add the output to the nodeMap
-    st_insert(nodeMap, (char *)outputPointer, (char *)outputName);
+    Vec_Ptr_t *vNodeVarMap = Vec_PtrAlloc(100); // Initial Capacity of 100
+
+    st__table *nodeInputMap = st__init_table(st__ptrcmp, st__ptrhash);
+    st__table *nodeMap = st__init_table(st__ptrcmp, st__ptrhash);
+    int nodeCounter = 1000;
+
 
     printf("\n>>> Traversing output %s [%p]\n", outputName, outputPointer);
-    fprintf(fout, "\n>>> Traversing output %s [%p]\n", outputName, outputPointer);
 
     // Ensure the function is in regular form (remove complement edge if any)
     node = Cudd_Regular(f);
@@ -111,18 +114,14 @@ void TraverseWithCudd(DdManager *dd, DdNode *f, Abc_Ntk_t *pNtk, int iPo, FILE *
 
     DdNode *zero = Cudd_ReadLogicZero(dd);
     printf("ZERO pointer: %p\n", zero);
-    fprintf(fout, "ZERO pointer: %p\n", zero);
 
     DdNode *one = DD_ONE(dd);
     printf("ONE POINTER: %p\n", one);
-    fprintf(fout, "ONE POINTER: %p\n", one);
 
     do {
-        char *nodeName = get_or_assign_name(nodeMap, node, &nodeCounter);
 
         if (Cudd_IsConstant(node)) {
-            printf("CONST node [%s] %p: %s\n",
-                nodeName,
+            printf("CONST node %p: %s\n",
                 node,
                 node == Cudd_ReadOne(dd) ? "1" : "0");
             continue;
@@ -134,93 +133,193 @@ void TraverseWithCudd(DdManager *dd, DdNode *f, Abc_Ntk_t *pNtk, int iPo, FILE *
         Abc_Obj_t *pObj = Abc_NtkPi(pNtk, index);
         const char *varName = pObj ? Abc_ObjName(pObj) : "UNKNOWN";
 
+
+        // TODO: Check if the node is complemented to determine which varName is complemented
+        NodeVarEntry_t *entry = NULL;
+        if (!st__lookup(nodeMap, (char *)node, (char **)&entry)) {
+            entry = ABC_ALLOC(NodeVarEntry_t, 1);
+            entry->node = node;
+            entry->varName = varName;
+            entry->nodeIndex = nodeCounter;
+            st__insert(nodeMap, (char *)node, (char *)entry);
+        } /*else {
+            printf("Existing node index: %d\n", entry->nodeIndex);
+        }*/
+
+        DdNode *complemented = Cudd_Not(node);
+        NodeVarEntry_t *compEntry = NULL;
+        if (!st__lookup(nodeMap, (char *)complemented, (char **)&compEntry)) {
+            compEntry = ABC_ALLOC(NodeVarEntry_t, 1);
+            compEntry->node = complemented;
+            int len = strlen(varName) + 2; // 1 for '!', 1 for '\0'
+            char *negatedVarName = ABC_ALLOC(char, len);
+            snprintf(negatedVarName, len, "!%s", varName); 
+            compEntry->varName = negatedVarName;
+            compEntry->nodeIndex = nodeCounter + 1;
+            st__insert(nodeMap, (char *)complemented, (char *)compEntry);
+            // printf("Assigning new node index for complemented: %d\n", nodeCounter);=
+        }
+
+        // Add constant 1 to nodeMap
+        if (!st__lookup(nodeMap, (char *)one, (char **)&entry)) {
+            entry = ABC_ALLOC(NodeVarEntry_t, 1);
+            entry->node = one;
+            entry->varName = "1";
+            entry->nodeIndex = 1;
+            st__insert(nodeMap, (char *)one, (char *)entry);
+        }
+
+        // Add constant 0 to nodeMap
+        if (!st__lookup(nodeMap, (char *)zero, (char **)&entry)) {
+            entry = ABC_ALLOC(NodeVarEntry_t, 1);
+            entry->node = zero;
+            entry->varName = "0";
+            entry->nodeIndex = 0;
+            st__insert(nodeMap, (char *)zero, (char *)entry);
+        }
+
+        nodeCounter += 10;
+
         DdNode *T = Cudd_T(node);
         DdNode *E = Cudd_E(node);
 
-        char *tName = get_or_assign_name(nodeMap, T, &nodeCounter);
-        char *eName = get_or_assign_name(nodeMap, Cudd_Regular(E), &nodeCounter);
+        // Normalize the pointers to remove complement edges
+        DdNode *T_clean = T; // Cudd_Regular(T);
+        DdNode *E_clean = E; // Cudd_Regular(E);
 
-        // Print debug info
-        printf("%s -> Node [%s] %p: index = %d, T = [%s] %p%s, E = [%s] %p%s\n",
-            varName,
-            nodeName,
-            node,
-            Cudd_NodeReadIndex(node),
-            tName,
-            T,
-            Cudd_IsComplement(T) ? " (T is complemented)" : "",
-            eName,
-            E,
-            Cudd_IsComplement(E) ? " (E is complemented)" : "");
+        // // For the T child only
+        // Vec_Ptr_t *inputList = NULL;
+        // if (!st__lookup(nodeInputMap, (char *)T_clean, (char **)&inputList)) {
+        //     inputList = Vec_PtrAlloc(16);
+        //     st__insert(nodeInputMap, (char *)T_clean, (char *)inputList);
+        // }
 
-        fprintf(fout, "%s -> Node [%s] %p: index = %d, T = [%s] %p%s, E = [%s] %p%s\n",
-            varName,
-            nodeName,
-            node,
-            index,
-            tName,
-            T,
-            Cudd_IsComplement(T) ? " (T is complemented)" : "",
-            eName,
-            E,
-            Cudd_IsComplement(E) ? " (E is complemented)" : "");
-
-        if ( T != one ) {
-            // TODO: Include checking for if there is a complemented version or not
-            // TODO: Treat everything as the start of an OR tree and then base decisions on that
-
-            char *lastNodeName = get_or_assign_name(nodeMap, lastNode, &nodeCounter);
-        
-
-            if ( i >= 1 ) {
-                // if ( is_OR(lastNode, node) ) {
-                //     offset += snprintf(prsLine + offset, sizeof(prsLine) - offset, " | (%s & %s)", tName, varName);
-                //     printf("%s maps to %s!!\n", eName, nodeName);
-                //     or_flag = 1;
-                //     start_flag = 0;
-                // } else if (1 == or_flag ) {
-                //     offset += snprintf(prsLine + offset, sizeof(prsLine) - offset, " -> %s", nodeName);
-                //     or_flag = 0;
-                //     start_flag = 0;
-                // } else {
-                    offset += snprintf(prsLine + offset, sizeof(prsLine) - offset, "(%s & %s) -> %s\n", tName, varName, nodeName);
-                    // if (start_flag == 1) {
-                    //     offset += snprintf(prsLine + offset, sizeof(prsLine) - offset, " -> %s\n", lastNodeName);    
-                    // } else {
-                    //     offset += snprintf(prsLine + offset, sizeof(prsLine) - offset, "(%s & %s)", tName, varName);
-                    //     start_flag = 1;
-                    // }
-                    or_flag = 0;
-                }
-            // }
-        } else {
-            offset += snprintf(prsLine + offset, sizeof(prsLine) - offset, "%s -> %s\n", varName, nodeName);
+        // Then branch (always include)
+        Vec_Ptr_t *thenList = NULL;
+        if (!st__lookup(nodeInputMap, (char *)T_clean, (char **)&thenList)) {
+            thenList = Vec_PtrAlloc(16);
+            st__insert(nodeInputMap, (char *)T_clean, (char *)thenList);
         }
+        InputEdge_t *thenEdge = ABC_ALLOC(InputEdge_t, 1);
+        thenEdge->input = node;
+        thenEdge->isTBranch = true;
+        Vec_PtrPush(thenList, thenEdge);
+
+        // Else branch (only include if not logic zero)
+        if (E_clean != Cudd_ReadLogicZero(dd)) {
+            Vec_Ptr_t *elseList = NULL;
+            if (!st__lookup(nodeInputMap, (char *)E_clean, (char **)&elseList)) {
+                elseList = Vec_PtrAlloc(16);
+                st__insert(nodeInputMap, (char *)E_clean, (char *)elseList);
+            }
+            InputEdge_t *elseEdge = ABC_ALLOC(InputEdge_t, 1);
+            elseEdge->input = node;
+            elseEdge->isTBranch = false;
+            Vec_PtrPush(elseList, elseEdge);
+        }
+
+        // Add the current node as a parent of the T branch
+        // Vec_PtrPushUnique(inputList, node);
         
-        lastNode = node;
-        i = i + 1;
+        // Print debug info
+        printf("%s -> Node %p, int %d: index = %d, T = %p%s, E = %p%s\n",
+            varName,
+            node,
+            entry->nodeIndex,
+            Cudd_NodeReadIndex(node),
+            T,
+            Cudd_IsComplement(T) ? " (T is complemented)" : "",
+            E,
+            Cudd_IsComplement(E) ? " (E is complemented)" : "");
+
+        // Add mapping for pointer to input name
+        int found = 0;
+        for (int i = 0; i < Vec_PtrSize(vNodeVarMap); i++) {
+            NodeVarEntry_t *entry = (NodeVarEntry_t *)Vec_PtrEntry(vNodeVarMap, i);
+            if (entry->node == node) {
+                found = 1;
+                break;
+            }
+        }
+
+        if (!found) {
+            NodeVarEntry_t *newEntry = ABC_ALLOC(NodeVarEntry_t, 1);
+            newEntry->node = node;
+            newEntry->varName = varName;
+            Vec_PtrPush(vNodeVarMap, newEntry);
+        }
+
     } while (Cudd_NextNode(gen, &node));
 
-    // Print out the last node condition if there isn't a new condition
-    char *nodeName = get_or_assign_name(nodeMap, node, &nodeCounter);
-    char *lastNodeName = get_or_assign_name(nodeMap, lastNode, &nodeCounter);
-    if (1 == or_flag) {
-        offset += snprintf(prsLine + offset, sizeof(prsLine) - offset, " -> %s", nodeName);
-        or_flag = 0;
-    } else if (1 == start_flag) {
-        offset += snprintf(prsLine + offset, sizeof(prsLine) - offset, " -> %s\n", lastNodeName); 
-        start_flag = 0;
+
+    printf("\n=== Node Map ===\n");
+    st__generator *genSt;
+    const char *key;
+    char *value;
+
+    st__foreach_item(nodeMap, genSt, &key, &value) {
+        NodeVarEntry_t *entry = (NodeVarEntry_t *)value;
+        printf("Node %p (%s) => index %d\n", entry->node, entry->varName, entry->nodeIndex);
     }
 
-    printf("%s\n\n", prsLine);
+    // printf("\n=== Node Input Map ===\n");
+    // st__generator *genInput;
+    // st__foreach_item(nodeInputMap, genInput, &key, &value) {
+    //     DdNode *parent = (DdNode *)key;
+    //     Vec_Ptr_t *inputs = (Vec_Ptr_t *)value;
+    
+    //     printf("%p: ", (void *)parent);
+    
+    //     for (int i = 0; i < Vec_PtrSize(inputs); i++) {
+    //         DdNode *child = (DdNode *)Vec_PtrEntry(inputs, i);
+    //         printf("%p", (void *)child);
+    
+    //         if (i < Vec_PtrSize(inputs) - 1)
+    //             printf(", ");
+    //     }
+    
+    //     printf("\n");
+    // }
+
+    printf("\n=== Node Input Map ===\n");
+    st__generator *genInput;
+    st__foreach_item(nodeInputMap, genInput, &key, &value) {
+        DdNode *parent = (DdNode *)key;
+        Vec_Ptr_t *inputs = (Vec_Ptr_t *)value;
+    
+        printf("%p: ", parent);
+    
+        for (int i = 0; i < Vec_PtrSize(inputs); i++) {
+            InputEdge_t *edge = (InputEdge_t *)Vec_PtrEntry(inputs, i);
+            printf("%p%s", edge->input, edge->isTBranch ? " [T]" : " [E]");
+            if (i < Vec_PtrSize(inputs) - 1)
+                printf(", ");
+        }
+        printf("\n");
+    }
+
+
+    printf("\n\n");
+
+    Vec_Ptr_t *path = Vec_PtrAlloc(32);
+    PrintPointerChainsFromLeaf(nodeInputMap, one, path, true);
+    Vec_PtrFree(path);
+
+    // printf("Node-to-Variable Map:\n");
+    // for (int i = 0; i < Vec_PtrSize(vNodeVarMap); i++) {
+    //     NodeVarEntry_t *entry = (NodeVarEntry_t *)Vec_PtrEntry(vNodeVarMap, i);
+    //     printf("%p -> %s\n", entry->node, entry->varName);
+    // }
+
+    // for (int i = 0; i < Vec_PtrSize(vNodeVarMap); i++) {
+    //     void *pEntry = Vec_PtrEntry(vNodeVarMap, i);
+    //     ABC_FREE(pEntry);
+    // }
+    // Vec_PtrFree(vNodeVarMap);
 
     // Clean up the generator
     Cudd_GenFree(gen);
-    st_free_table(nodeMap);
 }
-
-
-
 
 
 int Bdd2Prs(Abc_Ntk_t * pNtk, int fReorder) {
@@ -232,13 +331,6 @@ int Bdd2Prs(Abc_Ntk_t * pNtk, int fReorder) {
     DdNode * bFunc;
     int i;
 
-    FILE *fout = fopen("bdd_output.txt", "w");
-    if (!fout) {
-        perror("Failed to open output file");
-        exit(1);
-    }
-
-
     Abc_Ntk_t * pTemp = Abc_NtkIsStrash(pNtk) ? pNtk : Abc_NtkStrash(pNtk, 0, 0, 0);
 
     assert( Abc_NtkIsStrash(pTemp) );
@@ -248,9 +340,7 @@ int Bdd2Prs(Abc_Ntk_t * pNtk, int fReorder) {
         printf( "Construction of global BDDs has failed.\n" );
         return 1;
     }
-    // // --- NOTE: ADDED THIS!
-    // Cudd_PrintDebug( dd, bFunc, Abc_NtkCiNum(pNtk), 3 );  // verbose level 2
-    // // --- 
+
 
     // Collect global BDDs of all primary outputs
     vFuncsGlob = Vec_PtrAlloc( Abc_NtkCoNum(pTemp) );
@@ -260,28 +350,13 @@ int Bdd2Prs(Abc_Ntk_t * pNtk, int fReorder) {
     // Iterate through each BDD and print it
     Vec_PtrForEachEntry( DdNode *, vFuncsGlob, bFunc, i ) {
         printf("=== BDD for output %d ===\n", i);
-        // Cudd_PrintDebug( dd, bFunc, Abc_NtkCiNum(pTemp), 3 );
-        TraverseWithCudd(dd, bFunc, pTemp, i, fout);
-
-        // Abc_Obj_t *pPo = Abc_NtkCo(pTemp, i);
-        // const char *outputName = Abc_ObjName(pPo);
-
-        // printf("=== BDD for output %d: %s ===\n", i, outputName);
-        // printf("Output node pointer: %p\n", bFunc);
-
-        // TraverseWithCudd(dd, bFunc, pTemp, i);
+        TraverseWithCudd(dd, bFunc, pTemp, i);
     }
-
-    // cleanup
-    // if ( pTemp != pNtk )
-    //     Abc_NtkDelete( pTemp );
 
     Abc_NtkFreeGlobalBdds( pNtk, 0 );
     Vec_PtrForEachEntry( DdNode *, vFuncsGlob, bFunc, i )
     Cudd_RecursiveDeref( dd, bFunc );
     Vec_PtrFree( vFuncsGlob );
-    // Extra_StopManager( dd );
     Abc_NtkCleanCopy( pNtk );
-    fclose(fout);
     return 0;
 }
