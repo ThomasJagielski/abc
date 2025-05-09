@@ -66,7 +66,9 @@ void PrintPointerChainsFromLeaf(st__table *inputMap, DdNode *current, Vec_Ptr_t 
         for (int i = Vec_PtrSize(path) - 1; i >= 0; i--) {
             InputEdge_t *e = (InputEdge_t *)Vec_PtrEntry(path, i);
             printf("%p [%c]", (void *)e->input, e->isTBranch ? 'T' : 'E');
-            if (i > 0) printf(" -> ");
+            // if (i > 0) printf(" -> ");
+            if (i > 1) printf(" & ");
+            if (i == 1) printf(" -> ");
         }
         printf("\n");
     } else {
@@ -82,10 +84,6 @@ void PrintPointerChainsFromLeaf(st__table *inputMap, DdNode *current, Vec_Ptr_t 
 }
 
 
-
-
-
-
 void TraverseWithCudd(DdManager *dd, DdNode *f, Abc_Ntk_t *pNtk, int iPo) {
     DdGen *gen;
     DdNode *node;
@@ -94,7 +92,7 @@ void TraverseWithCudd(DdManager *dd, DdNode *f, Abc_Ntk_t *pNtk, int iPo) {
     const char *outputName = Abc_ObjName(pPo);
     DdNode *outputPointer = f;
 
-    Vec_Ptr_t *vNodeVarMap = Vec_PtrAlloc(100); // Initial Capacity of 100
+    Vec_Ptr_t *vNodeVarMap = Vec_PtrAlloc(100); // Initial Capacity of 100 - likely won't exceed this
 
     st__table *nodeInputMap = st__init_table(st__ptrcmp, st__ptrhash);
     st__table *nodeMap = st__init_table(st__ptrcmp, st__ptrhash);
