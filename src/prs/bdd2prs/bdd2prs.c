@@ -9,52 +9,56 @@
 #include "bdd2prs.h"
 // #include "vec.h"
 
-// void PrintPointerChainsFromLeaf(st__table *inputMap, DdNode *current, Vec_Ptr_t *path) {
-//     Vec_PtrPush(path, current);
-
-//     Vec_Ptr_t *inputs = NULL;
-//     if (!st__lookup(inputMap, (char *)current, (char **)&inputs) || Vec_PtrSize(inputs) == 0) {
-//         // Reached a root node, print chain
-//         for (int i = Vec_PtrSize(path) - 1; i >= 0; i--) {
-//             printf("%p", (void *)Vec_PtrEntry(path, i));
-//             if (i > 0)
-//                 printf(" -> ");
-//         }
-//         printf("\n");
-//     } else {
-//         for (int i = 0; i < Vec_PtrSize(inputs); i++) {
-//             DdNode *input = (DdNode *)Vec_PtrEntry(inputs, i);
-//             PrintPointerChainsFromLeaf(inputMap, input, path);
-//         }
-//     }
-
-//     Vec_PtrPop(path);
-// }
-
-// void PrintPointerChainsFromLeaf(st__table *inputMap, DdNode *current, Vec_Ptr_t *path) {
-//     Vec_PtrPush(path, current);
+// void PrintPointerChainsFromLeaf(st__table *inputMap, DdNode *current, Vec_Ptr_t *path, st__table *nodeMap, bool isTBranch) {
+//     // Create an edge struct to record how we got to this node
+//     InputEdge_t *edge = ABC_ALLOC(InputEdge_t, 1);
+//     edge->input = current;
+//     edge->isTBranch = isTBranch;
+//     Vec_PtrPush(path, edge);
 
 //     Vec_Ptr_t *inputs = NULL;
 //     if (!st__lookup(inputMap, (char *)current, (char **)&inputs) || Vec_PtrSize(inputs) == 0) {
 //         // Reached a root node — print the full path
-//         for (int i = Vec_PtrSize(path) - 1; i >= 0; i--) {
-//             printf("%p", Vec_PtrEntry(path, i));
-//             if (i > 0) printf(" -> ");
+//         printf("(");
+// 		// USE THIS ONE IF YOU WANT TO INCLUDE THE ONE NODE
+// 		// for (int i = Vec_PtrSize(path) - 1; i >= 0; i--) {
+//         for (int i = Vec_PtrSize(path) - 1; i > 0; i--) {
+//             InputEdge_t *e = (InputEdge_t *)Vec_PtrEntry(path, i);
+//             // printf("%p [%c]", (void *)e->input, e->isTBranch ? 'T' : 'E');
+//             NodeVarEntry_t *entry = NULL;
+//             if (st__lookup(nodeMap, (char *)e->input, (char **)&entry)) {
+//                 if (e->isTBranch) {
+//                     printf("%s", entry->varName);
+//                 } else {
+//                     printf("~%s", entry->varName);
+//                 }
+//             } else {
+//                 printf("%p [%c]", (void *)e->input, e->isTBranch ? 'T' : 'E');
+//             }
+
+//             // if (i > 0) printf(" -> ");
+//             if (i > 1) printf(" & ");
+// 			// USE THIS FOR PRS OUTPUT
+//             // if (i == 1) printf(" -> ");
 //         }
-//         printf("\n");
+//         // printf("\n");
+//         printf(") | ");
 //     } else {
 //         for (int i = 0; i < Vec_PtrSize(inputs); i++) {
-//             InputEdge_t *edge = (InputEdge_t *)Vec_PtrEntry(inputs, i);
-//             if (edge->input == Cudd_Not(0)) continue; // Skip ELSE to 0
-//             PrintPointerChainsFromLeaf(inputMap, edge->input, path);
+//             InputEdge_t *nextEdge = (InputEdge_t *)Vec_PtrEntry(inputs, i);
+//             if (nextEdge->input == Cudd_Not(0)) continue; // Skip ELSE to 0
+//             PrintPointerChainsFromLeaf(inputMap, nextEdge->input, path, nodeMap, nextEdge->isTBranch);
 //         }
 //     }
 
 //     Vec_PtrPop(path);
+//     ABC_FREE(edge);
 // }
 
-void PrintPointerChainsFromLeaf(st__table *inputMap, DdNode *current, Vec_Ptr_t *path, bool isTBranch) {
+
+void PrintPointerChainsFromLeaf(st__table *inputMap, DdNode *current, Vec_Ptr_t *path, st__table *nodeMap, bool isTBranch) {
     // Create an edge struct to record how we got to this node
+    int parenthesis_count = 0;
     InputEdge_t *edge = ABC_ALLOC(InputEdge_t, 1);
     edge->input = current;
     edge->isTBranch = isTBranch;
@@ -63,25 +67,52 @@ void PrintPointerChainsFromLeaf(st__table *inputMap, DdNode *current, Vec_Ptr_t 
     Vec_Ptr_t *inputs = NULL;
     if (!st__lookup(inputMap, (char *)current, (char **)&inputs) || Vec_PtrSize(inputs) == 0) {
         // Reached a root node — print the full path
-        for (int i = Vec_PtrSize(path) - 1; i >= 0; i--) {
+        printf("(");
+		// USE THIS ONE IF YOU WANT TO INCLUDE THE ONE NODE
+		// for (int i = Vec_PtrSize(path) - 1; i >= 0; i--) {
+        // for (int i = Vec_PtrSize(path) - 1; i > 0; i--) {
+        for (int i = 1; i < Vec_PtrSize(path); i++) {
             InputEdge_t *e = (InputEdge_t *)Vec_PtrEntry(path, i);
-            printf("%p [%c]", (void *)e->input, e->isTBranch ? 'T' : 'E');
+            // printf("%p [%c]", (void *)e->input, e->isTBranch ? 'T' : 'E');
+            NodeVarEntry_t *entry = NULL;
+            if (st__lookup(nodeMap, (char *)e->input, (char **)&entry)) {
+                if (e->isTBranch) {
+                    printf("%s", entry->varName);
+                } else {
+                    printf("(~%s", entry->varName);
+                    parenthesis_count++;
+                }
+            } else {
+                printf("%p [%c]", (void *)e->input, e->isTBranch ? 'T' : 'E');
+            }
+
             // if (i > 0) printf(" -> ");
-            if (i > 1) printf(" & ");
-            if (i == 1) printf(" -> ");
+            // if (i > 1) printf(" & ");
+            if (i < Vec_PtrSize(path) - 1) printf(" & ");
+			// USE THIS FOR PRS OUTPUT
+            // if (i == 1) printf(" -> ");
         }
-        printf("\n");
+        // printf("\n");
+        while (parenthesis_count > 0) {
+            printf(")");
+            parenthesis_count--;
+        }
+        printf(") | ");
     } else {
         for (int i = 0; i < Vec_PtrSize(inputs); i++) {
             InputEdge_t *nextEdge = (InputEdge_t *)Vec_PtrEntry(inputs, i);
             if (nextEdge->input == Cudd_Not(0)) continue; // Skip ELSE to 0
-            PrintPointerChainsFromLeaf(inputMap, nextEdge->input, path, nextEdge->isTBranch);
+            PrintPointerChainsFromLeaf(inputMap, nextEdge->input, path, nodeMap, nextEdge->isTBranch);
         }
     }
 
     Vec_PtrPop(path);
     ABC_FREE(edge);
 }
+
+
+
+
 
 
 void TraverseWithCudd(DdManager *dd, DdNode *f, Abc_Ntk_t *pNtk, int iPo) {
@@ -300,7 +331,7 @@ void TraverseWithCudd(DdManager *dd, DdNode *f, Abc_Ntk_t *pNtk, int iPo) {
     printf("\n\n");
 
     Vec_Ptr_t *path = Vec_PtrAlloc(32);
-    PrintPointerChainsFromLeaf(nodeInputMap, one, path, true);
+    PrintPointerChainsFromLeaf(nodeInputMap, one, path, nodeMap, true);
     Vec_PtrFree(path);
 
     // printf("Node-to-Variable Map:\n");
